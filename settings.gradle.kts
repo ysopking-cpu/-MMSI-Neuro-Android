@@ -5,5 +5,5 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-rootProject.name = "NeuroStats"
+rootProject.name = "MMSI Neuro"
 include(":app")

@@ -46,7 +46,9 @@ fun MMSINeuroDashboardScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
             ) {
                 Row(modifier = Modifier.padding(16.dp)) {
-                    Text("Source: Playback", style = MaterialTheme.typography.bodyMedium)
+                    Button(onClick = { viewModel.setSourceToPlayback() }) {
+                        Text("Load Test Data", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
 

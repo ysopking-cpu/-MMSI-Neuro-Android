@@ -1,8 +1,10 @@
 package com.aistudio.neurostats.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aistudio.neurostats.data.EegDataSource
+import com.aistudio.neurostats.data.FilePlaybackDataSource
 import com.aistudio.neurostats.data.SourceStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class EegViewModel : ViewModel() {
+class EegViewModel(application: Application) : AndroidViewModel(application) {
     private var currentDataSource: EegDataSource? = null
     private var streamingJob: Job? = null
 
@@ -28,8 +30,8 @@ class EegViewModel : ViewModel() {
         // In a real app, observe the status from the source
     }
 
-    fun switchMode(mode: String) {
-        // Implementation for mode switching
+    fun setSourceToPlayback() {
+        setSource(FilePlaybackDataSource(context = getApplication(), fileName = "eeg_test_data.csv"))
     }
 
     fun toggleStreaming() {
