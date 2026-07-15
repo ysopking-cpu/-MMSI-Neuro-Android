@@ -22,6 +22,13 @@ class EegViewModel(application: Application) : AndroidViewModel(application) {
     private val _cognitiveLoadTrajectory = MutableStateFlow(0.0)
     val cognitiveLoadTrajectory: StateFlow<Double> = _cognitiveLoadTrajectory.asStateFlow()
 
+    private val _eegChannels = MutableStateFlow(FloatArray(4) { 0f })
+    val eegChannels: StateFlow<FloatArray> = _eegChannels.asStateFlow()
+
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+    private val recordedData = mutableListOf<FloatArray>()
+
     private val _signalQuality = MutableStateFlow(85)
     val signalQuality: StateFlow<Int> = _signalQuality.asStateFlow()
 
@@ -44,8 +51,28 @@ class EegViewModel(application: Application) : AndroidViewModel(application) {
                 currentDataSource?.streamEegData()?.collect { frame ->
                     // Here we would call the W(t) calculation logic
                     _cognitiveLoadTrajectory.value = frame.channels.sum().toDouble()
+                    _eegChannels.value = frame.channels
+                    if (_isRecording.value) {
+                        recordedData.add(frame.channels.copyOf())
+                    }
                 }
             }
         }
+    }
+
+    fun toggleRecording() {
+        _isRecording.value = !_isRecording.value
+        if (_isRecording.value) {
+            recordedData.clear()
+        }
+    }
+
+    fun getRecordedDataAsCsv(): String {
+        val sb = StringBuilder()
+        sb.append("Index,Ch1,Ch2,Ch3,Ch4\n")
+        recordedData.forEachIndexed { index, channels ->
+            sb.append("$index,${channels.joinToString(",")}\n")
+        }
+        return sb.toString()
     }
 }
