@@ -1,9 +1,13 @@
 package com.aistudio.neurostats.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,43 +17,30 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share
 import com.aistudio.neurostats.data.SourceStatus
-import com.patrykandpatrick.vico.compose.axis.horizontal.bottomAxis
-import com.patrykandpatrick.vico.compose.axis.vertical.startAxis
-import com.patrykandpatrick.vico.compose.chart.Chart
-import com.patrykandpatrick.vico.compose.chart.line.lineChart
-import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
-import com.patrykandpatrick.vico.core.entry.FloatEntry
-import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MMSINeuroDashboardScreen(
-    viewModel: EegViewModel = viewModel()
+    viewModel: EegViewModel = viewModel(),
+    onNavigateToSession: (Int) -> Unit
 ) {
-    val streamStatus by viewModel.status.collectAsState()
-    val currentWTask by viewModel.cognitiveLoadTrajectory.collectAsState()
-    val signalQuality by viewModel.signalQuality.collectAsState()
-    val isRecording by viewModel.isRecording.collectAsState()
-    val eegChannels by viewModel.eegChannels.collectAsState()
-    val modelProducer = remember { ChartEntryModelProducer() }
+    val batchStatus by viewModel.batchStatus.collectAsState()
+    val sessions by viewModel.sessions.collectAsState()
     val context = LocalContext.current
+    var showStudyDialog by remember { mutableStateOf(false) }
     
-    // Simple chart update
-    LaunchedEffect(eegChannels) {
-        modelProducer.setEntries(
-            eegChannels.mapIndexed { index, value -> FloatEntry(index.toFloat(), value) }
-        )
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MMSI Neuro", style = MaterialTheme.typography.titleMedium) },
-                actions = {
-                    ConnectionStatusBadge(status = streamStatus)
-                    SignalHealthBadge(qualityPercent = signalQuality)
-                }
+                title = { Text("MMSI Neuro Stats - Validierungs-Plattform", style = MaterialTheme.typography.titleMedium) }
             )
         }
     ) { innerPadding ->
@@ -57,188 +48,187 @@ fun MMSINeuroDashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            
-            // Simplified Source Selector
+            // Platform introduction
             Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
             ) {
-                Row(modifier = Modifier.padding(16.dp)) {
-                    Button(onClick = { viewModel.setSourceToPlayback() }) {
-                        Text("Load Test Data", style = MaterialTheme.typography.bodyMedium)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("MMSI v3.6.3 Validierungs-Pipeline", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Diese Plattform validiert die statistischen Trajektorien-Abweichungen W(t) der 10 klinischen Test-Probanden der Studie ds002721 (Schizophrenie-Profile vs. gesunde Kontrollgruppe).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { showStudyDialog = true },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Studien-Details anzeigen (ds002721)", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
 
-            // ZONE 2: Echtzeit-Trajektorien-Anzeige (Center Stage)
-            Card(
+            // Real-time Batch Progress Panel
+            batchStatus?.let { status ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = when(status.stage) {
+                            BatchStage.COMPLETED -> Color(240, 253, 244)
+                            BatchStage.FAILED -> Color(254, 242, 242)
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        }
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = when(status.stage) {
+                                BatchStage.RUNNING -> "Batch-Validierung läuft..."
+                                BatchStage.COMPLETED -> "Validierung Erfolgreich Abgeschlossen!"
+                                BatchStage.FAILED -> "Validierung Fehlgeschlagen"
+                                else -> ""
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = when(status.stage) {
+                                BatchStage.COMPLETED -> Color(21, 128, 61)
+                                BatchStage.FAILED -> Color(185, 28, 28)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        if (status.stage == BatchStage.RUNNING) {
+                            val progress = status.currentProbandIndex / 10f
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Verarbeite Proband ${status.currentProbandIndex}/10: ${status.currentProbandName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+
+                        if (status.stage == BatchStage.COMPLETED) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = "Fertig", tint = Color(34, 197, 94))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Bericht generiert: MMSI_Clinical_Batch_Report.pdf", style = MaterialTheme.typography.bodySmall, color = Color(21, 128, 61))
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    status.pdfFile?.let { file ->
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.provider",
+                                            file
+                                        )
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Konsolidierten Bericht teilen"))
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(34, 197, 94)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Share, null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Konsolidierten PDF-Bericht Teilen")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Primary Validation Trigger Button
+            Button(
+                onClick = { viewModel.runClinicalValidationBatch() },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(vertical = 12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    .padding(vertical = 12.dp)
+                    .height(64.dp),
+                enabled = batchStatus?.stage != BatchStage.RUNNING,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp).fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "Echtzeit EEG Kanal 1",
-                        style = MaterialTheme.typography.labelLarge
+                if (batchStatus?.stage == BatchStage.RUNNING) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
                     )
-                    
-                    val model = modelProducer.getModel()
-                    if (model != null) {
-                        Chart(
-                            chart = lineChart(),
-                            model = model,
-                            modifier = Modifier.fillMaxWidth().height(200.dp),
-                            startAxis = startAxis(title = "Amplitude (µV)"),
-                            bottomAxis = bottomAxis(title = "Time (s)")
-                        )
-                    } else {
-                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                            Text("Keine Daten")
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Analysiere Test-Probanden...")
+                } else {
+                    Text("10 Probanden Batch-Validierung starten", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // History
+            Text("Klinische Berichts-Historie", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            if (sessions.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Noch keine Berichte generiert. Starte die Pipeline oben.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
+                Column(modifier = Modifier.heightIn(max = 600.dp)) {
+                    sessions.forEach { session ->
+                        val date = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(session.timestamp))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable { onNavigateToSession(session.id) }
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(session.label, style = MaterialTheme.typography.titleSmall)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Befund-Zeitpunkt: $date", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                }
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     }
-                    
-                    Text(
-                        text = "Kognitive Systemlast W(t): ${String.format(Locale.US, "%.3f", currentWTask)}",
-                        style = MaterialTheme.typography.labelLarge
-                    )
                 }
             }
-
-            // ZONE 3: Daumen-freundliche Primary Action Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.toggleRecording() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isRecording) 
-                            MaterialTheme.colorScheme.secondary 
-                        else 
-                            MaterialTheme.colorScheme.tertiary
-                    )
-                ) {
-                    Text(
-                        text = if (isRecording) "Aufnahme Stoppen" else "Aufnahme Starten",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        val csvData = viewModel.getRecordedDataAsCsv()
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, csvData)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Export CSV"))
-                    },
-                    modifier = Modifier
-                        .weight(0.5f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Text("CSV", style = MaterialTheme.typography.titleMedium)
-                }
-
-                Button(
-                    onClick = { viewModel.toggleStreaming() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (streamStatus == SourceStatus.STREAMING) 
-                            MaterialTheme.colorScheme.error 
-                        else 
-                            MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        text = if (streamStatus == SourceStatus.STREAMING) "Messung Stoppen" else "Messung Starten",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-            }
+            
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
-}
 
-@Composable
-fun ConnectionStatusBadge(status: SourceStatus) {
-    val (badgeColor, label) = when (status) {
-        SourceStatus.DISCONNECTED -> Color.Red to "Disconnected"
-        SourceStatus.CONNECTED -> Color(0xFFFFC107) to "Connected"
-        SourceStatus.STREAMING -> Color(0xFF4CAF50) to "Streaming"
-    }
-
-    Surface(
-        color = badgeColor.copy(alpha = 0.2f),
-        contentColor = badgeColor,
-        shape = RoundedCornerShape(50)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(badgeColor, CircleShape)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
-    }
-}
-
-@Composable
-fun SignalHealthBadge(qualityPercent: Int) {
-    val badgeColor = when {
-        qualityPercent > 75 -> Color(0xFF4CAF50)
-        qualityPercent > 40 -> Color(0xFFFFC107)
-        else -> Color(0xFFF44336)
-    }
-
-    Surface(
-        color = badgeColor.copy(alpha = 0.2f),
-        contentColor = badgeColor,
-        shape = RoundedCornerShape(50)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(badgeColor, CircleShape)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "$qualityPercent% Signal",
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
+    if (showStudyDialog) {
+        AlertDialog(
+            onDismissRequest = { showStudyDialog = false },
+            title = { Text("Studie ds002721 (Schizophrenie)") },
+            text = { Text("MMSI (Multivariate Multi-Scale Instabilities) v3.6.3 analysiert die kognitiven Lasttrajektorien W(t) der Probanden. Ein W(t) Wert über dem klinischen Grenzwert von 3.2 weist auf erhöhte neuronale Instabilitäten und kognitive Systemlast hin. Dieser Test führt alle 10 Referenz-Probanden vollautomatisch durch die klinische Auswertungs-Pipeline.") },
+            confirmButton = { TextButton(onClick = { showStudyDialog = false }) { Text("OK") } }
+        )
     }
 }
