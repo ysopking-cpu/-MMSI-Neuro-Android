@@ -4,7 +4,7 @@ authors:
   - family-names: "Buckreus"
     given-names: "Patrick Frank"
 title: "MMSI Neuro v3.6 - Native Android Validation Framework"
-version: 3.6
+version: "3.6"
 date-released: 2026-07-14
 keywords:
   - EEG
@@ -12,4 +12,3 @@ keywords:
   - Jetpack Compose
   - Android Native
   - Neuro-Signal-Processing
-license: "Proprietary"
